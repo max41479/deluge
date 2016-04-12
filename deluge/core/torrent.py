@@ -633,6 +633,7 @@ class Torrent(object):
         status = self.handle.status()
         session_paused = component.get("Core").session.is_paused()
         old_state = self.state
+        self.set_status_message()
 
         if self.forced_error:
             self.state = "Error"
@@ -1290,11 +1291,10 @@ class Torrent(object):
             twisted.internet.defer.Deferred: A deferred which fires when the rename is complete
         """
         log.debug("Attempting to rename folder: %s to %s", folder, new_folder)
-        if len(new_folder) < 1:
-            log.error("Attempting to rename a folder with an invalid folder name: %s", new_folder)
-            return
 
-        new_folder = sanitize_filepath(new_folder, folder=True)
+        # Empty string means remove the dir and move its content to the parent
+        if len(new_folder) > 0:
+            new_folder = sanitize_filepath(new_folder, folder=True)
 
         def on_file_rename_complete(dummy_result, wait_dict, index):
             """File rename complete"""

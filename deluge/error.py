@@ -32,6 +32,10 @@ class InvalidTorrentError(DelugeError):
     pass
 
 
+class AddTorrentError(DelugeError):
+    pass
+
+
 class InvalidPathError(DelugeError):
     pass
 
@@ -42,6 +46,9 @@ class WrappedException(DelugeError):
         self.message = message
         self.type = exception_type
         self.traceback = traceback
+
+    def __str__(self):
+        return "%s\n%s" % (self.message, self.traceback)
 
 
 class _ClientSideRecreateError(DelugeError):

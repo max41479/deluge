@@ -1,5 +1,11 @@
+# -*- coding: utf-8 -*-
+#
+# This file is part of Deluge and is licensed under GNU General Public License 3.0, or later, with
+# the additional special exception to link portions of this program with the OpenSSL library.
+# See LICENSE for more details.
+#
+
 from twisted.internet import defer
-from twisted.internet.error import CannotListenError
 
 import deluge.component as component
 import deluge.ui.common
@@ -7,8 +13,8 @@ from deluge import error
 from deluge.core.authmanager import AUTH_LEVEL_ADMIN
 from deluge.ui.client import Client, DaemonSSLProxy, client
 
-from . import common
 from .basetest import BaseTestCase
+from .daemon_base import DaemonBase
 
 
 class NoVersionSendingDaemonSSLProxy(DaemonSSLProxy):
@@ -65,73 +71,75 @@ class NoVersionSendingClient(Client):
             self.disconnect_callback()
 
 
-class ClientTestCase(BaseTestCase):
+class ClientTestCase(BaseTestCase, DaemonBase):
 
     def set_up(self):
-        self.listen_port = 58846
-        for dummy in range(10):
-            try:
-                self.core = common.start_core(listen_port=self.listen_port)
-            except CannotListenError as ex:
-                exception_error = ex
-                self.listen_port += 1
-            else:
-                break
-        else:
-            raise exception_error
+        d = self.common_set_up()
+        d.addCallback(self.start_core)
+        d.addErrback(self.terminate_core)
+        return d
 
     def tear_down(self):
-        self.core.terminate()
-        return component.shutdown()
+        d = component.shutdown()
+        d.addCallback(self.terminate_core)
+        return d
 
     def test_connect_no_credentials(self):
-        d = client.connect(
-            "localhost", self.listen_port, username="", password=""
-        )
+        d = client.connect("localhost", self.listen_port, username="", password="")
 
         def on_connect(result):
             self.assertEqual(client.get_auth_level(), AUTH_LEVEL_ADMIN)
             self.addCleanup(client.disconnect)
             return result
 
-        d.addCallback(on_connect)
+        d.addCallbacks(on_connect, self.fail)
         return d
 
     def test_connect_localclient(self):
         username, password = deluge.ui.common.get_localhost_auth()
-        d = client.connect(
-            "localhost", self.listen_port, username=username, password=password
-        )
+        d = client.connect("localhost", self.listen_port, username=username, password=password)
 
         def on_connect(result):
             self.assertEqual(client.get_auth_level(), AUTH_LEVEL_ADMIN)
             self.addCleanup(client.disconnect)
             return result
 
-        d.addCallback(on_connect)
+        d.addCallbacks(on_connect, self.fail)
         return d
 
     def test_connect_bad_password(self):
         username, password = deluge.ui.common.get_localhost_auth()
-        d = client.connect(
-            "localhost", self.listen_port, username=username, password=password + "1"
-        )
+        d = client.connect("localhost", self.listen_port, username=username, password=password + "1")
 
         def on_failure(failure):
             self.assertEqual(
                 failure.trap(error.BadLoginError),
                 error.BadLoginError
             )
+            self.assertEquals(failure.value.message, "Password does not match")
             self.addCleanup(client.disconnect)
 
-        d.addErrback(on_failure)
+        d.addCallbacks(self.fail, on_failure)
+        return d
+
+    def test_connect_invalid_user(self):
+        username, password = deluge.ui.common.get_localhost_auth()
+        d = client.connect("localhost", self.listen_port, username="invalid-user")
+
+        def on_failure(failure):
+            self.assertEqual(
+                failure.trap(error.BadLoginError),
+                error.BadLoginError
+            )
+            self.assertEquals(failure.value.message, "Username does not exist")
+            self.addCleanup(client.disconnect)
+
+        d.addCallbacks(self.fail, on_failure)
         return d
 
     def test_connect_without_password(self):
         username, password = deluge.ui.common.get_localhost_auth()
-        d = client.connect(
-            "localhost", self.listen_port, username=username
-        )
+        d = client.connect("localhost", self.listen_port, username=username)
 
         def on_failure(failure):
             self.assertEqual(
@@ -141,23 +149,28 @@ class ClientTestCase(BaseTestCase):
             self.assertEqual(failure.value.username, username)
             self.addCleanup(client.disconnect)
 
-        d.addErrback(on_failure)
+        d.addCallbacks(self.fail, on_failure)
         return d
 
     @defer.inlineCallbacks
+    def test_connect_with_password(self):
+        username, password = deluge.ui.common.get_localhost_auth()
+        yield client.connect("localhost", self.listen_port, username=username, password=password)
+        yield client.core.create_account("testuser", "testpw", "DEFAULT")
+        yield client.disconnect()
+        ret = yield client.connect("localhost", self.listen_port, username="testuser", password="testpw")
+        self.assertEquals(ret, deluge.common.AUTH_LEVEL_NORMAL)
+        yield
+
+    @defer.inlineCallbacks
     def test_invalid_rpc_method_call(self):
-        yield client.connect(
-            "localhost", self.listen_port, username="", password=""
-        )
+        yield client.connect("localhost", self.listen_port, username="", password="")
         d = client.core.invalid_method()
 
         def on_failure(failure):
-            self.assertEqual(
-                failure.trap(error.WrappedException),
-                error.WrappedException
-            )
+            self.assertEqual(failure.trap(error.WrappedException), error.WrappedException)
             self.addCleanup(client.disconnect)
-        d.addErrback(on_failure)
+        d.addCallbacks(self.fail, on_failure)
         yield d
 
     def test_connect_without_sending_client_version_fails(self):
@@ -174,5 +187,5 @@ class ClientTestCase(BaseTestCase):
             )
             self.addCleanup(no_version_sending_client.disconnect)
 
-        d.addErrback(on_failure)
+        d.addCallbacks(self.fail, on_failure)
         return d

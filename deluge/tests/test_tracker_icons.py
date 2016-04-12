@@ -1,6 +1,7 @@
 import os
 
 import pytest
+from twisted.trial.unittest import SkipTest
 
 import deluge.component as component
 import deluge.ui.tracker_icons
@@ -58,7 +59,8 @@ class TrackerIconsTestCase(BaseTestCase):
         return d
 
     def test_get_openbt_png(self):
-        # openbittorrent.com has an incorrect type (image/gif)
+        raise SkipTest("openbittorrent.com site is down, possibly permanently")
+        # openbittorrent.com has an incorrect type (image/gif) pylint: disable=unreachable
         icon = TrackerIcon(os.path.join(dirname, "openbt.png"))
         d = self.icons.fetch("openbittorrent.com")
         d.addCallback(self.assertNotIdentical, None)

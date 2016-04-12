@@ -215,9 +215,9 @@ class DelugeRPCProtocol(DelugeTransferProtocol):
                 ))
             except AttributeError:
                 # This is not a deluge exception (object has no attribute '_args), let's wrap it
-                log.error("An exception occurred while sending RPC_ERROR to "
-                          "client. Wrapping it and resending. Error to "
-                          "send(causing exception goes next):\n%s", formated_tb)
+                log.warning("An exception occurred while sending RPC_ERROR to "
+                            "client. Wrapping it and resending. Error to "
+                            "send(causing exception goes next):\n%s", formated_tb)
                 try:
                     raise WrappedException(str(exceptionValue), exceptionType.__name__, formated_tb)
                 except WrappedException:
@@ -373,9 +373,9 @@ class RPCServer(component.Component):
         try:
             reactor.listenSSL(port, self.factory, ServerContextFactory(), interface=hostname)
         except Exception as ex:
-            log.info("Daemon already running or port not available..")
+            log.info("Daemon already running or port not available.")
             log.error(ex)
-            sys.exit(0)
+            raise
 
     def register_object(self, obj, name=None):
         """
